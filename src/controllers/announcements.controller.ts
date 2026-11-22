@@ -23,6 +23,23 @@ const announcementSelect = {
   user: { select: publicUserSelect },
 } as const;
 
+// Ownership check shared by PATCH and DELETE:
+// 1) the announcement must exist (404), 2) it must belong to the current user (403)
+async function assertOwnership(announcementId: number, userId: number) {
+  const announcement = await prisma.announcement.findUnique({
+    where: { id: announcementId },
+    select: { userId: true },
+  });
+
+  if (!announcement) {
+    throw createHttpError(404, "Announcement not found");
+  }
+
+  if (announcement.userId !== userId) {
+    throw createHttpError(403, "Access denied");
+  }
+}
+
 // GET /announcements (public)
 export async function getAnnouncements(req: Request, res: Response) {
   // Already validated and coerced by validateQuery (page is a number, sort has a default)
@@ -94,8 +111,11 @@ export async function updateAnnouncement(req: Request, res: Response) {
   const id = Number(req.params.id);
   const body = req.body as UpdateAnnouncementInput;
 
+  // Only the owner can edit: 404 if not found, 403 if it belongs to someone else
+  await assertOwnership(id, req.user!.sub);
+
   // Only the provided fields are changed; updatedAt is set automatically by @updatedAt.
-  // If the id does not exist, update throws P2025 and the error handler returns 404.
+  // If the announcement was deleted in the meantime, update throws P2025 -> 404 from the error handler.
   const announcement = await prisma.announcement.update({
     where: { id },
     data: body,
@@ -109,7 +129,10 @@ export async function updateAnnouncement(req: Request, res: Response) {
 export async function deleteAnnouncement(req: Request, res: Response) {
   const id = Number(req.params.id);
 
-  // Throws P2025 if the id does not exist -> 404 from the error handler
+  // Only the owner can delete: 404 if not found, 403 if it belongs to someone else
+  await assertOwnership(id, req.user!.sub);
+
+  // If the announcement was deleted in the meantime, delete throws P2025 -> 404 from the error handler
   await prisma.announcement.delete({ where: { id } });
 
   // 204 No Content must not have a body
