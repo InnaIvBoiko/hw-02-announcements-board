@@ -10,4 +10,51 @@ datasource db {
   provider = "postgresql"
 }
 
-// Models here
+// Allowed announcement categories (enforced at the database level too)
+enum Category {
+  sale
+  service
+  job
+  other
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  email     String   @unique
+  // Stored only as a bcrypt hash, never returned in API responses
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+
+  announcements Announcement[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  // Unique so we can look up a refresh token by its value
+  token     String   @unique
+  userId    Int
+  // Delete the user's tokens when the user is deleted
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Announcement {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String
+  price       Float
+  category    Category
+  // Author is required: every announcement belongs to a user
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  // Updated automatically by Prisma on every update
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
