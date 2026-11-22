@@ -6,7 +6,15 @@ import { z } from "../openapi.ts";
 export const registerSchema = z
   .object({
     username: z.string().trim().min(3).max(30).openapi({ example: "ivan_petrenko" }),
-    email: z.email().openapi({ example: "ivan@example.com" }),
+    // Normalized to lowercase so "Ivan@Example.com" and "ivan@example.com" are the same email.
+    // trim/lowercase must run before the email check, hence string().pipe(email())
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .pipe(z.email())
+      // pipe() hides the email format from the docs, so declare it explicitly
+      .openapi({ format: "email", example: "ivan@example.com" }),
     password: z.string().min(6).openapi({ example: "secret123" }),
     name: z.string().trim().min(2).openapi({ example: "Іван" }),
   })

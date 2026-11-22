@@ -87,11 +87,22 @@ export async function refresh(req: Request, res: Response) {
   }
 
   const userId = Number(payload.sub);
+
+  // 2. Find the token record in the DB by its value.
+  // Missing means it was already used (rotated) or the user logged out.
+  const storedToken = await prisma.refreshToken.findUnique({
+    where: { token: refreshToken },
+  });
+
+  if (!storedToken || storedToken.userId !== userId) {
+    throw createHttpError(401, "Invalid refresh token");
+  }
+
   const tokens = generateTokens(userId);
 
-  // 2. Token rotation: delete the old token and save the new one atomically.
-  // deleteMany + count check means a token missing from the DB (already used or logged out) is rejected,
-  // and two parallel requests with the same token can't both succeed.
+  // 3. Token rotation: delete the old token and save the new one atomically.
+  // The count check protects against two parallel requests with the same token:
+  // only the first one deletes it, the second one gets 401.
   const rotated = await prisma.$transaction(async (tx) => {
     const { count } = await tx.refreshToken.deleteMany({
       where: { token: refreshToken, userId },

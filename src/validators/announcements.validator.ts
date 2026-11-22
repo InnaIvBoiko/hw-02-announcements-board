@@ -8,9 +8,12 @@ export const PER_PAGE = 10;
 
 // ---------- Params / query schemas ----------
 
-// Route params are strings: coerce "5" -> 5 and reject "abc", "0", "-1", "1.5"
+// Max value of a PostgreSQL INTEGER column (Prisma Int); larger ids would make the query fail with 500
+const MAX_DB_INT = 2_147_483_647;
+
+// Route params are strings: coerce "5" -> 5 and reject "abc", "0", "-1", "1.5" and out-of-range ids
 export const idParamSchema = z.object({
-  id: z.coerce.number().int().positive().openapi({ example: 5 }),
+  id: z.coerce.number().int().positive().max(MAX_DB_INT).openapi({ example: 5 }),
 });
 
 export const listQuerySchema = z.object({
