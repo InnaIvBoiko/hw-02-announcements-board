@@ -1,177 +1,264 @@
-# REST API Дошки оголошень
+# Announcements Board REST API
 
-REST API для дошки оголошень з JWT-автентифікацією, авторизацією та контролем доступу. Реалізовано в рамках курсового завдання магістратури.
+A JSON REST API for an announcements board with JWT authentication, authorization and ownership checks. Built as a master's course assignment.
 
-## Загальний опис
+## Overview
 
-Чистий JSON API без рендерингу HTML. Бекенд обслуговує клієнтів (React-застосунки, мобільні додатки тощо) через HTTP-запити.
+A pure JSON API with no HTML rendering. The backend serves any client (React apps, mobile apps, etc.) over HTTP.
 
-Користувачі можуть публікувати, редагувати та видаляти власні оголошення. Анонімні відвідувачі бачать список оголошень і можуть переглядати деталі. Для створення оголошення потрібна реєстрація. Редагувати та видаляти можна лише власні оголошення.
+- **Anonymous visitors** can browse the list of announcements and view each one.
+- **Registered users** can create announcements.
+- **Only the author** can edit or delete an announcement.
 
-Автентифікація — JWT з refresh токенами. Access token: 15 хвилин, refresh token: 7 днів. Token rotation для refresh токенів.
+Authentication uses JWT with refresh tokens:
 
-## Технологічний стек
+- **Access token** — valid for 15 minutes, sent as `Authorization: Bearer <token>` to protected routes.
+- **Refresh token** — valid for 7 days, stored in the database, exchanged for a new token pair via `/auth/refresh`.
+- **Token rotation** — every refresh deletes the old refresh token, so a stolen token cannot be reused.
 
-| Технологія                     | Опис                            |
+## Tech stack
+
+| Technology                     | Purpose                         |
 | ------------------------------ | ------------------------------- |
-| Node.js                        | Середовище виконання            |
-| Express 5                      | Веб-фреймворк                   |
-| Prisma 7                       | ORM для бази даних (PostgreSQL) |
-| Zod                            | Валідація вхідних даних         |
-| bcrypt                         | Хешування паролів               |
-| jsonwebtoken                   | JWT-автентифікація              |
-| @asteasolutions/zod-to-openapi | Генерація OpenAPI документації  |
+| Node.js + TypeScript (tsx)     | Runtime                         |
+| Express 5                      | Web framework                   |
+| Prisma 7                       | ORM (PostgreSQL)                |
+| Zod 4                          | Input validation                |
+| bcrypt                         | Password hashing                |
+| jsonwebtoken                   | JWT authentication              |
+| @asteasolutions/zod-to-openapi | OpenAPI docs generated from Zod |
 | swagger-ui-express             | Swagger UI                      |
-| dotenv                         | Змінні середовища               |
+| dotenv                         | Environment variables           |
 
-## Встановлення
+## Getting started
 
-1. Встановіть залежності:
+### 1. Start PostgreSQL with Docker
+
+```bash
+docker run --name postgres-dev \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=password \
+  -e POSTGRES_DB=announcements \
+  -p 5432:5432 \
+  -d postgres
+```
+
+After a reboot, start the existing container with `docker start postgres-dev`.
+
+### 2. Install dependencies
 
 ```bash
 npm install
 ```
 
-2. Створіть файл конфігурації:
+### 3. Configure environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-3. Налаштуйте `.env`:
+| Variable       | Description                                  | Example                                                                    |
+| -------------- | -------------------------------------------- | -------------------------------------------------------------------------- |
+| `DATABASE_URL` | PostgreSQL connection string                 | `postgresql://postgres:password@localhost:5432/announcements?schema=public` |
+| `JWT_SECRET`   | Secret used to sign JWTs (long random value) | `your-secret-key-at-least-256-bits-long`                                   |
+| `PORT`         | Server port (optional, default `3000`)       | `3000`                                                                     |
 
-```env
-DATABASE_URL=postgresql://postgres:password@localhost:5432/announcements?schema=public
-JWT_SECRET=your-secret-key-at-least-256-bits-long
+To generate a strong secret:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 ```
 
-4. Застосуйте міграцію:
+### 4. Apply migrations and generate Prisma Client
 
 ```bash
 npm run prisma:migrate
+npm run prisma:generate
 ```
 
-5. Запустіть проект:
+> With Prisma 7, `migrate dev` no longer generates the client automatically, so both commands are required.
+
+### 5. Run the server
 
 ```bash
 npm run dev
 ```
 
-## Маршрути
+The API runs at http://localhost:3000, and the docs are at http://localhost:3000/api-docs.
+
+## API routes
+
+🔒 = requires `Authorization: Bearer <accessToken>`
 
 ### Auth
 
-| Метод | Шлях             | Опис                          | Auth |
-| ----- | ---------------- | ----------------------------- | ---- |
-| POST  | `/auth/register` | Реєстрація користувача        | Ні   |
-| POST  | `/auth/login`    | Вхід користувача              | Ні   |
-| POST  | `/auth/refresh`  | Оновлення токенів             | Ні   |
-| POST  | `/auth/logout`   | Вихід                         | Ні   |
-| GET   | `/auth/me`       | Профіль поточного користувача | Так  |
+| Method | Path             | Description                                  | Auth |
+| ------ | ---------------- | -------------------------------------------- | ---- |
+| POST   | `/auth/register` | Register a user, returns user + token pair   | —    |
+| POST   | `/auth/login`    | Log in, returns user + new token pair        | —    |
+| POST   | `/auth/refresh`  | Exchange a refresh token for a new pair      | —    |
+| POST   | `/auth/logout`   | Invalidate the current user's refresh token  | 🔒   |
+| GET    | `/auth/me`       | Current user profile                         | 🔒   |
 
-### Оголошення
+### Announcements
 
-| Метод  | Шлях                 | Опис                                      | Auth |
-| ------ | -------------------- | ----------------------------------------- | ---- |
-| GET    | `/announcements`     | Список з пагінацією, пошуком, сортуванням | Ні   |
-| GET    | `/announcements/:id` | Деталі оголошення                         | Ні   |
-| POST   | `/announcements`     | Створення оголошення                      | Так  |
-| PATCH  | `/announcements/:id` | Часткове оновлення (власне)               | Так  |
-| DELETE | `/announcements/:id` | Видалення (власне)                        | Так  |
+| Method | Path                 | Description                                  | Auth |
+| ------ | -------------------- | -------------------------------------------- | ---- |
+| GET    | `/announcements`     | List with pagination, search and sorting     | —    |
+| GET    | `/announcements/:id` | Announcement details with author             | —    |
+| POST   | `/announcements`     | Create an announcement                       | 🔒   |
+| PATCH  | `/announcements/:id` | Partially update own announcement            | 🔒   |
+| DELETE | `/announcements/:id` | Delete own announcement                      | 🔒   |
 
-## Параметри запитів
+### Status codes
+
+| Code | When                                                                     |
+| ---- | ------------------------------------------------------------------------ |
+| 200  | Success                                                                  |
+| 201  | User or announcement created                                             |
+| 204  | Logout or delete succeeded (no response body)                            |
+| 400  | Validation failed or malformed JSON                                      |
+| 401  | Missing/invalid/expired access token, wrong credentials, bad refresh token |
+| 403  | Trying to update or delete another user's announcement                   |
+| 404  | Announcement or route not found                                          |
+| 409  | Username or email already taken                                          |
+
+Errors share one shape:
+
+```json
+{ "error": "Access denied" }
+```
+
+Validation errors also include details per request part:
+
+```json
+{
+  "error": "Validation failed",
+  "details": {
+    "body": ["title: Too small: expected string to have >=5 characters"]
+  }
+}
+```
+
+## Request parameters
 
 ### GET /announcements
 
-| Параметр | Тип   | Опис                                            |
-| -------- | ----- | ----------------------------------------------- |
-| `search` | query | Пошук по назві (нечутливий до регістру)         |
-| `sort`   | query | `newest` (за замовчуванням) або `oldest`        |
-| `page`   | query | Номер сторінки (число > 0), 10 записів/сторінка |
+| Parameter | In    | Description                                          |
+| --------- | ----- | ---------------------------------------------------- |
+| `search`  | query | Case-insensitive substring search in `title`         |
+| `sort`    | query | `newest` (default) or `oldest`, by `createdAt`       |
+| `page`    | query | Page number, integer > 0 (default `1`), 10 per page  |
+
+Response:
+
+```json
+{
+  "data": [ { "id": 5, "title": "...", "user": { "id": 1, "username": "..." } } ],
+  "pagination": { "total": 23, "page": 2, "totalPages": 3, "perPage": 10 }
+}
+```
 
 ### POST /auth/register
 
-| Поле       | Вимоги                                  |
-| ---------- | --------------------------------------- |
-| `username` | рядок, обов'язковий, 3–30 символів      |
-| `email`    | email, обов'язковий                     |
-| `password` | рядок, обов'язковий, мінімум 6 символів |
-| `name`     | рядок, обов'язковий, мінімум 2 символи  |
+| Field      | Rules                            |
+| ---------- | -------------------------------- |
+| `username` | string, required, 3–30 chars     |
+| `email`    | valid email, required            |
+| `password` | string, required, min 6 chars    |
+| `name`     | string, required, min 2 chars    |
+
+### POST /auth/login
+
+| Field      | Rules            |
+| ---------- | ---------------- |
+| `username` | string, required |
+| `password` | string, required |
+
+A wrong username and a wrong password return the same `401 Invalid credentials`.
+
+### POST /auth/refresh
+
+| Field          | Rules            |
+| -------------- | ---------------- |
+| `refreshToken` | string, required |
 
 ### POST /announcements
 
-| Поле          | Вимоги                                                 |
-| ------------- | ------------------------------------------------------ |
-| `title`       | рядок, обов'язковий, 5–50 символів                     |
-| `description` | рядок, обов'язковий, мінімум 10 символів               |
-| `price`       | число, обов'язкове, > 0                                |
-| `category`    | рядок, обов'язковий: `sale`, `service`, `job`, `other` |
+| Field         | Rules                                              |
+| ------------- | -------------------------------------------------- |
+| `title`       | string, required, 5–50 chars                       |
+| `description` | string, required, min 10 chars                     |
+| `price`       | number, required, > 0                              |
+| `category`    | required, one of `sale`, `service`, `job`, `other` |
 
-PATCH використовує ті ж правила валідації, але всі поля опціональні (хоча б одне має бути присутнє).
+The author is always taken from the access token, never from the request body.
 
-## Структура проекту
+### PATCH /announcements/:id
+
+Same rules as `POST`, but every field is optional. At least one field is required, so an empty `{}` returns `400`.
+
+## Data model
+
+Three Prisma models (see [`prisma/schema.prisma`](prisma/schema.prisma)):
+
+- **User** — `id`, `username` (unique), `email` (unique), `password` (bcrypt hash), `name`, `createdAt`
+- **RefreshToken** — `id`, `token` (unique), `userId` → User, `createdAt`
+- **Announcement** — `id`, `title`, `description`, `price`, `category` (enum), `userId` → User (required), `createdAt`, `updatedAt` (`@updatedAt`)
+
+Deleting a user also deletes their announcements and refresh tokens (`onDelete: Cascade`).
+
+## Project structure
 
 ```
-boilerplate/
+hw-02-announcements-board/
 ├── prisma/
-│   ├── schema.prisma
-│   ├── client.ts
-│   └── migrations/
+│   ├── schema.prisma               # Data models
+│   ├── client.ts                   # Shared Prisma Client instance
+│   └── migrations/                 # SQL migrations
 ├── src/
 │   ├── controllers/
-│   │   ├── auth.controller.ts
-│   │   └── announcements.controller.ts
+│   │   ├── auth.controller.ts      # register, login, refresh, logout, me
+│   │   └── announcements.controller.ts  # CRUD + ownership check
 │   ├── middleware/
-│   │   ├── authenticate.ts
-│   │   └── validate.ts
+│   │   ├── authenticate.ts         # Bearer token check, sets req.user
+│   │   └── validate.ts             # validateBody / validateParams / validateQuery
 │   ├── routes/
-│   │   ├── auth.routes.ts
-│   │   └── announcements.routes.ts
+│   │   ├── auth.routes.ts          # Auth routes + OpenAPI docs
+│   │   └── announcements.routes.ts # Announcement routes + OpenAPI docs
+│   ├── utils/
+│   │   └── tokens.ts               # JWT sign/verify helpers
 │   ├── validators/
-│   │   ├── auth.validator.ts
-│   │   └── announcements.validator.ts
-│   └── openapi.ts
-├── app.ts
+│   │   ├── auth.validator.ts       # Zod schemas for auth
+│   │   └── announcements.validator.ts  # Zod schemas for announcements
+│   └── openapi.ts                  # OpenAPI registry and bearerAuth scheme
+├── generated/prisma/               # Generated Prisma Client (git-ignored)
+├── app.ts                          # Express app entry point
+├── prisma.config.ts                # Prisma CLI config
 ├── .env.example
-├── .env
 ├── package.json
-├── tsconfig.json
-├── prisma.config.ts
-└── README.md
+└── tsconfig.json
 ```
 
-## Бойлерплейт
+## Scripts
 
-Мінімальний стартовий набір:
+| Command                   | Description                         |
+| ------------------------- | ----------------------------------- |
+| `npm run dev`             | Start with hot reload (`tsx --watch`) |
+| `npm start`               | Start the server (`tsx`)            |
+| `npm run prisma:migrate`  | Create and apply migrations         |
+| `npm run prisma:generate` | Generate Prisma Client              |
 
-- `package.json` з усіма залежностями
-- `tsconfig.json` з налаштуваннями TypeScript
-- `src/openapi.ts` з ініціалізованим registry та `bearerAuth`
-- `prisma/client.ts` з ініціалізованим Prisma Client (PostgreSQL через `@prisma/adapter-pg`)
-- `prisma.config.ts` з конфігурацією Prisma
-- `.env.example` з шаблоном змінних середовища
+## API documentation
 
-## Доступні скрипти
+Swagger UI: http://localhost:3000/api-docs
 
-| Команда                   | Опис                                 |
-| ------------------------- | ------------------------------------ |
-| `npm run dev`             | Запуск з hot reload (`node --watch`) |
-| `npm start`               | Запуск у виробничому режимі          |
-| `npm run prisma:migrate`  | Створення та застосування міграцій   |
-| `npm run prisma:generate` | Генерація Prisma Client              |
+To call protected routes from Swagger UI:
 
-## Документація API
+1. Call `POST /auth/login` (or `/auth/register`) and copy `accessToken` from the response.
+2. Click **Authorize** at the top of the page and paste the token.
+3. Routes marked with a lock now send the token automatically.
 
-Swagger UI доступний за адресою: http://localhost:3000/api-docs
-
-## Prisma schema
-
-Три моделі: `User`, `RefreshToken`, `Announcement`.
-
-- `User` — `username` (унікальний), хешований `password`, `email` (унікальний), `name`, `createdAt`
-- `RefreshToken` — `token` (унікальний), зв'язок з `User`
-- `Announcement` — `title`, `description`, `price`, `category`, зв'язок з `User`, `createdAt`, `updatedAt`
-
-## Ліцензія
+## License
 
 ISC
