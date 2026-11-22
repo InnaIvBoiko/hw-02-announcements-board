@@ -7,6 +7,9 @@ import { z } from "zod";
 
 extendZodWithOpenApi(z);
 
+// Re-export the extended z so schemas always have .openapi() available
+export { z };
+
 export const registry = new OpenAPIRegistry();
 
 registry.registerComponent("securitySchemes", "bearerAuth", {
