@@ -1,0 +1,6 @@
+node_modules
+# Keep environment variables out of version control
+.env
+
+# Prisma Client is generated code, can be rebuilt with `npm run prisma:generate`
+/generated/
