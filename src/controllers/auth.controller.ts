@@ -111,3 +111,28 @@ export async function refresh(req: Request, res: Response) {
 
   res.json(tokens);
 }
+
+// POST /auth/logout (protected)
+export async function logout(req: Request, res: Response) {
+  // deleteMany does not throw when nothing matches (delete would throw P2025),
+  // so we always return 204 whether the token was in the DB or not
+  await prisma.refreshToken.deleteMany({ where: { userId: req.user!.sub } });
+
+  // 204 must not have a body, so end the response without sending any data
+  res.status(204).end();
+}
+
+// GET /auth/me (protected)
+export async function me(req: Request, res: Response) {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user!.sub },
+    select: { ...publicUserSelect, createdAt: true },
+  });
+
+  // Token can still be valid for a user that has been deleted in the meantime
+  if (!user) {
+    throw createHttpError(404, "User not found");
+  }
+
+  res.json(user);
+}
