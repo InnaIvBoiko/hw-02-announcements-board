@@ -4,7 +4,12 @@ import createHttpError from "http-errors";
 import prisma from "../../prisma/client.ts";
 import type { Prisma } from "../../generated/prisma/client.ts";
 import { publicUserSelect } from "./auth.controller.ts";
-import { PER_PAGE, type ListQuery } from "../validators/announcements.validator.ts";
+import {
+  PER_PAGE,
+  type CreateAnnouncementInput,
+  type ListQuery,
+  type UpdateAnnouncementInput,
+} from "../validators/announcements.validator.ts";
 
 // Fields returned for every announcement, with the author's public data (never the password)
 const announcementSelect = {
@@ -69,4 +74,44 @@ export async function getAnnouncementById(req: Request, res: Response) {
   }
 
   res.json(announcement);
+}
+
+// POST /announcements (protected)
+export async function createAnnouncement(req: Request, res: Response) {
+  const body = req.body as CreateAnnouncementInput;
+
+  const announcement = await prisma.announcement.create({
+    // Author always comes from the access token, never from the request body
+    data: { ...body, userId: req.user!.sub },
+    select: announcementSelect,
+  });
+
+  res.status(201).json(announcement);
+}
+
+// PATCH /announcements/:id (protected)
+export async function updateAnnouncement(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  const body = req.body as UpdateAnnouncementInput;
+
+  // Only the provided fields are changed; updatedAt is set automatically by @updatedAt.
+  // If the id does not exist, update throws P2025 and the error handler returns 404.
+  const announcement = await prisma.announcement.update({
+    where: { id },
+    data: body,
+    select: announcementSelect,
+  });
+
+  res.json(announcement);
+}
+
+// DELETE /announcements/:id (protected)
+export async function deleteAnnouncement(req: Request, res: Response) {
+  const id = Number(req.params.id);
+
+  // Throws P2025 if the id does not exist -> 404 from the error handler
+  await prisma.announcement.delete({ where: { id } });
+
+  // 204 No Content must not have a body
+  res.status(204).end();
 }
